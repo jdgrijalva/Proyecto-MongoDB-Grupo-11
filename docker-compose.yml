@@ -1,0 +1,105 @@
+services:
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    hostname: mongo1
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongo1_data:/data/db
+    networks:
+      - mongoCluster
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ ping: 1 }).ok === 1 ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    hostname: mongo2
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27020:27017"
+    volumes:
+      - mongo2_data:/data/db
+    networks:
+      - mongoCluster
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ ping: 1 }).ok === 1 ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    hostname: mongo3
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27021:27017"
+    volumes:
+      - mongo3_data:/data/db
+    networks:
+      - mongoCluster
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ ping: 1 }).ok === 1 ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
+    networks:
+      - mongoCluster
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        mongosh --host mongo1:27017 --quiet --eval '
+          try {
+            rs.status();
+            print("Replica Set rs0 ya inicializado");
+          } catch (e) {
+            if (e.codeName === "NotYetInitialized") {
+              print("Inicializando Replica Set rs0...");
+              const result = rs.initiate({
+                _id: "rs0",
+                members: [
+                  { _id: 0, host: "mongo1:27017" },
+                  { _id: 1, host: "mongo2:27017" },
+                  { _id: 2, host: "mongo3:27017" }
+                ]
+              });
+              printjson(result);
+              if (result.ok !== 1) quit(1);
+            } else {
+              throw e;
+            }
+          }
+        '
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+
+networks:
+  mongoCluster:
+    driver: bridge
